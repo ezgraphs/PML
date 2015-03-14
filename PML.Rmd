@@ -1,0 +1,241 @@
+---
+title: "Human Activity Recognition"
+author: "C S"
+date: "March 3, 2015"
+output: html_document
+---
+
+# Overview
+The [data](http://groupware.les.inf.puc-rio.br/har) reflects readings for six young healthy  participants who were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions.  The purpose of the measurements is to attempt to 
+identify proper and improper form when performing the exercise.  Sensors provided raw data 
+and additional statistical summaries were included for each record (mean, standard deviation 
+etc).  Sensors were placed on the belt, forearm, arm, and dumbell.  Coordinates were x, y, 
+and z and the principal axis were refered to as pitch, roll and yaw.
+
+A summary of the outcome codes (stored in the classe variable) are as follows:
+
+Class         | Second Header
+------------- | -------------
+A             | Exactly according to the specification
+B             | Throwing the elbows to the front
+C             | Lifting the dumbbell only halfway
+D             | Lowering the dumbbell only halfway
+E             | Throwing the hips to the front
+
+
+## Model Building
+The final model was built using the outcome of LDA, QDA, TreeBag and KNN models.   The predicted outcomes from each were used to "vote" on a final overall prediction for each record.  In each case, a small training set and the full data set were used.  (This was for my own education on how the algorithms would perform and predictions would vary when using subsets of data).  
+
+## Cross Validation
+Cross validation was set in the trainControl for each call to the caret package with the number of iterations set to 4.  A resampling method of cv was used for all but KNN.    For KNN four repeats of 10–fold cross–validation was used by specifying the method as repeatedcv with repeats set to four.
+
+Steps in the analysis and additional details follow.
+
+# Initial Setup
+
+The initial steps are standard steps related to staging the data.
+
+* Load needed R packages, 
+* set a seed to ensure consistent outcome, 
+* read in the datasets, 
+* split the training dataset into training and test sections (20% used for training), 
+* cast the classe variable to a factor.  
+
+Note that the final_testing dataset is never used until the final predictions.
+
+A function is created which trains a model using a subset of the columns available for modeling.  The reasons for the selection of columns was not primarily accuracy, but performance.  The 48 fields selected were numeric, did not include a perponderance of NAs and focused on the raw data rather than any derived summary statistics.  
+
+```{r warning=FALSE, echo=FALSE, error=FALSE}
+library(caret)
+set.seed(123)
+
+setwd('~/Desktop/r/machine_learning/assignment/PML')
+
+full_training <- read.csv("../../pml-training.csv", stringsAsFactors=FALSE)
+final_testing <- read.csv("../../pml-testing.csv", stringsAsFactors=FALSE)
+
+inTrain  <- createDataPartition(y=full_training$classe, p = 0.20, list = FALSE)
+training <- full_training[inTrain,]
+testing  <- full_training[-inTrain,]
+
+full_training$classe <- as.factor(full_training$classe)
+training$classe      <- as.factor(training$classe)
+testing$classe       <- as.factor(testing$classe )
+
+createModel<- function(dataset, modelName){
+
+  tc = trainControl(method = "cv", number = 4)
+  
+# Limitting to 48 fields: eliminated std, mean and other statistics, 
+# and those with a preponderance of NAs.  
+  newModel <- train(classe ~ accel_arm_x+accel_arm_y+accel_arm_z+
+                      accel_belt_x+accel_belt_y+accel_belt_z+
+                      accel_dumbbell_x+accel_dumbbell_y+accel_dumbbell_z+
+                      accel_forearm_x+accel_forearm_y+accel_forearm_z+
+                      gyros_arm_x+gyros_arm_y+gyros_arm_z+
+                      gyros_belt_x+gyros_belt_y+gyros_belt_z+
+                      gyros_dumbbell_x+gyros_dumbbell_y+gyros_dumbbell_z+
+                      gyros_forearm_x+gyros_forearm_y+gyros_forearm_z+
+                      magnet_arm_x+magnet_arm_y+magnet_arm_z+
+                      magnet_belt_x+magnet_belt_y+magnet_belt_z+
+                      magnet_dumbbell_x+magnet_dumbbell_y+magnet_dumbbell_z+
+                      magnet_forearm_x+magnet_forearm_y+magnet_forearm_z+
+                      pitch_arm+pitch_belt+pitch_dumbbell+pitch_forearm+
+                      roll_arm+roll_belt+roll_dumbbell+roll_forearm+
+                      yaw_arm+yaw_belt+yaw_dumbbell+yaw_forearm,
+                  data=dataset,
+                  trainControl=tc,
+                  method=modelName)
+  
+  return(newModel)
+}
+
+```
+
+A KNN Model function includes slightly different parameter settings than those in the previous function, but uses the same 48 fields.
+
+```{r warning=FALSE, echo=FALSE, error=FALSE}
+  
+# Limitting to same 48 fields listed above
+createKnnModel<- function(dataset){
+  newModel <-  train(classe ~ accel_arm_x+accel_arm_y+accel_arm_z+
+                    accel_belt_x+accel_belt_y+accel_belt_z+
+                    accel_dumbbell_x+accel_dumbbell_y+accel_dumbbell_z+
+                    accel_forearm_x+accel_forearm_y+accel_forearm_z+
+                    gyros_arm_x+gyros_arm_y+gyros_arm_z+
+                    gyros_belt_x+gyros_belt_y+gyros_belt_z+
+                    gyros_dumbbell_x+gyros_dumbbell_y+gyros_dumbbell_z+
+                    gyros_forearm_x+gyros_forearm_y+gyros_forearm_z+
+                    magnet_arm_x+magnet_arm_y+magnet_arm_z+
+                    magnet_belt_x+magnet_belt_y+magnet_belt_z+
+                    magnet_dumbbell_x+magnet_dumbbell_y+magnet_dumbbell_z+
+                    magnet_forearm_x+magnet_forearm_y+magnet_forearm_z+
+                    pitch_arm+pitch_belt+pitch_dumbbell+pitch_forearm+
+                    roll_arm+roll_belt+roll_dumbbell+roll_forearm+
+                    yaw_arm+yaw_belt+yaw_dumbbell+yaw_forearm, 
+                  data = dataset, 
+                  method = "knn", 
+                  trControl = trainControl(method="repeatedcv",repeats = 4) , 
+                  preProcess = c("center","scale"), 
+                  tuneLength = 20)
+  
+  return(newModel)
+}
+
+```
+
+Model creation using the training data involves calls to the function using the individual models.
+
+```{r cache=TRUE, warning=FALSE}
+modelLda <- createModel(training, 'lda')
+```
+
+```{r cache=TRUE, warning=FALSE}
+modelQda <- createModel(training, 'qda')
+```
+
+```{r cache=TRUE, warning=FALSE}
+modelTreebag <- createModel(training, 'treebag') 
+```
+
+```{r cache=TRUE, warning=FALSE}
+modelKnn <- createKnnModel(training) 
+```
+
+# Model Performance
+Model performance is reported in the confusion matrices based on predictions for the test data which was a subset of the original training data.  The error rate is reflected by the accuracy of each model reported.
+
+## LDA
+```{r cache=TRUE, warning=FALSE}
+plsClasses <- predict(modelLda, newdata = testing)
+confusionMatrix(data = plsClasses, testing$classe)
+```
+
+```{r cache=TRUE, warning=FALSE}
+library(pROC)
+plot(roc(ordered(testing$classe), ordered(plsClasses)))
+```
+
+## QDA
+```{r cache=TRUE, warning=FALSE}
+plsClasses <- predict(modelQda, newdata = testing)
+confusionMatrix(data = plsClasses, testing$classe)
+```
+
+```{r cache=TRUE, warning=FALSE}
+library(pROC)
+plot(roc(ordered(testing$classe), ordered(plsClasses)))
+```
+
+## Treebag 
+```{r cache=TRUE, warning=FALSE}
+plsClasses <- predict(modelTreebag, newdata = testing)
+confusionMatrix(data = plsClasses, testing$classe)
+```
+
+```{r cache=TRUE, warning=FALSE}
+library(pROC)
+plot(roc(ordered(testing$classe), ordered(plsClasses)))
+```
+
+## KNN
+```{r cache=TRUE, warning=FALSE}
+plsClasses <- predict(modelKnn, newdata = testing)
+confusionMatrix(data = plsClasses, testing$classe)
+```
+
+```{r cache=TRUE, warning=FALSE}
+library(pROC)
+plot(roc(ordered(testing$classe), ordered(plsClasses)))
+```
+
+Additional models were created using the same function calls using the full training set.  Again, this was done to view the difference in model creation caused by using all available data.
+
+```{r cache=TRUE, warning=FALSE}
+full_modelLda <- createModel(full_training, 'lda')
+full_modelQda <- createModel(full_training, 'qda')
+full_modelTreebag <- createModel(full_training, 'treebag') 
+full_modelKnn <- createKnnModel(full_training) 
+```
+
+
+
+## LDA
+```{r cache=FALSE, warning=FALSE}
+ldaPredictions<-predict(modelLda, newdata = final_testing)
+qdaPredictions<-predict(modelQda, newdata = final_testing)
+treebagPredictions<-predict(modelTreebag, newdata = final_testing)
+knnPredictions<-predict(modelKnn, newdata = final_testing)
+
+
+full_ldaPredictions<-predict(full_modelLda, newdata = final_testing)
+full_qdaPredictions<-predict(full_modelQda, newdata = final_testing)
+full_treebagPredictions<-predict(full_modelTreebag, newdata = final_testing)
+full_knnPredictions<-predict(full_modelKnn, newdata = final_testing)
+```
+
+# Final Analysis
+These need to be submitted indivudually for scoring
+
+## Combine Predictions
+Primitive ensemble technique, just equally weight all algos and pick the
+one that was used most often.  
+```{r cache=FALSE}
+predictions<-data.frame(ldaPredictions,qdaPredictions,treebagPredictions,knnPredictions,
+            full_ldaPredictions,full_qdaPredictions,full_treebagPredictions,
+            full_knnPredictions)
+
+# http://stackoverflow.com/questions/15460691/count-unique-elements-in-data-frame-row-and-return-one-with-maximum-occurrence
+predictions$VOTE <- apply(predictions, 1, function(x) names(table(x))[which.max(table(x))])
+
+```
+
+# Compare Outcomes
+The twenty test cases and predicted outcomes are listed in the table below.
+```{r cache=FALSE, results='asis'}
+library(xtable)
+print(xtable(predictions), type = "html")
+```
+
+The values in the VOTE column will be used for the final submission.  In the case of a tie, the models will be reviewed and the model with the highest accuracy will be given preference.
+
